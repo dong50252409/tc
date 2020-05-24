@@ -6,11 +6,11 @@ tc
 Example
 -----
 ```
-%% 执行apply(Module,F,Args)10次，并统时长
+%% 执行N次函数调用，并统时长
 tc:t(Module, Fun, Args, N).
 
-%% 启动10个进程，分别执行apply(Module,F,Args)，测试并发性能，并统计时长
-tc:ct(Module, Fun, Args, 10).
+%% 启动N个进程，分别执行执行一次函数调用，测试并发性能，并统计时长
+tc:ct(Module, Fun, Args, N).
 ```
 
 Build
