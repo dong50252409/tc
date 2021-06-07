@@ -83,8 +83,7 @@ loop(Fun, N, I, Max, Min, Sum, List) when N >= I ->
             NewMax = Max,
             NewMin = Min
     end,
-    loop({M, F, A}, N, I + 1, NewMax, NewMin, NewSum,
-        [Microsecond | List]);
+    loop(Fun, N, I + 1, NewMax, NewMin, NewSum, [Microsecond | List]);
 loop({_M, _F, _A}, N, _I, Max, Min, Sum, List) ->
     Aver = Sum / N,
     {Greater, Less} = distribution(List, Aver),
