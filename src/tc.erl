@@ -5,46 +5,42 @@
 %% @doc 当前进程执行N次Fun()，打印结果
 -spec t(Fun :: function(), N :: non_neg_integer()) -> ok.
 t(Fun, N) ->
-    M = erlang:fun_info(Fun, module),
-    F = erlang:fun_info(Fun, name),
-    A = erlang:fun_info(Fun, arity),
+    {_, M} = erlang:fun_info(Fun, module),
+    {_, F} = erlang:fun_info(Fun, name),
+    {_, A} = erlang:fun_info(Fun, arity),
     do_t(Fun, M, F, A, N).
 
 %% @doc 当前进程执行N次apply(Fun, A)，打印结果
 -spec t(Fun :: function(), A :: [term()], N :: non_neg_integer()) -> ok.
 t(Fun, A, N) ->
-    Fun = fun() -> apply(Fun, A) end,
-    M = erlang:fun_info(Fun, module),
-    F = erlang:fun_info(Fun, name),
-    do_t(Fun, M, F, A, N).
+    {_, M} = erlang:fun_info(Fun, module),
+    {_, F} = erlang:fun_info(Fun, name),
+    do_t(fun() -> apply(Fun, A) end, M, F, A, N).
 
 %% @doc 当前进程执行N次apply(M, F, A)，打印结果
 -spec t(M :: module(), F :: atom(), A :: [term()], N :: non_neg_integer()) -> ok.
 t(M, F, A, N) ->
-    Fun = fun() -> apply(M, F, A) end,
-    do_t(Fun, M, F, A, N).
+    do_t(fun() -> apply(M, F, A) end, M, F, A, N).
 
 %% @doc 启动N个进程执行Fun()，打印结果
 -spec ct(Fun :: function(), N :: non_neg_integer()) -> ok.
 ct(Fun, N) ->
-    M = erlang:fun_info(Fun, module),
-    F = erlang:fun_info(Fun, name),
-    A = erlang:fun_info(Fun, arity),
+    {_, M} = erlang:fun_info(Fun, module),
+    {_, F} = erlang:fun_info(Fun, name),
+    {_, A} = erlang:fun_info(Fun, arity),
     do_ct(Fun, M, F, A, N).
 
 %% @doc 启动N个进程执行apply(Fun, A)，打印结果
 -spec ct(Fun :: function(), A :: [term()], N :: non_neg_integer()) -> ok.
 ct(Fun, A, N) ->
-    Fun = fun() -> apply(Fun, A) end,
-    M = erlang:fun_info(Fun, module),
-    F = erlang:fun_info(Fun, name),
-    do_ct(Fun, M, F, A, N).
+    {_, M} = erlang:fun_info(Fun, module),
+    {_, F} = erlang:fun_info(Fun, name),
+    do_ct(fun() -> apply(Fun, A) end, M, F, A, N).
 
 %% @doc 启动N个进程执行apply(M, F, A)，打印结果
 -spec ct(M :: module(), F :: atom(), A :: [term()], N :: non_neg_integer()) -> ok.
 ct(M, F, A, N) ->
-    Fun = fun() -> apply(M, F, A) end,
-    do_ct(Fun, M, F, A, N).
+    do_ct(fun() -> apply(M, F, A) end, M, F, A, N).
 
 %%----------------------------------------------------------------------
 %% Internal Functions
@@ -66,9 +62,12 @@ do_t(Fun, M, F, A, N) ->
     io:format("=====================~n").
 
 loop(Fun, N) ->
-    loop(Fun, N, 1, 0, 0, 0, []).
+    {Max, Min, Sum, List} = loop(Fun, N, 0, 0, 0, []),
+    Aver = Sum / N,
+    {Greater, Less} = distribution(List, Aver),
+    {Max, Min, Sum, Aver, Greater, Less}.
 
-loop(Fun, N, I, Max, Min, Sum, List) when N >= I ->
+loop(Fun, N, Max, Min, Sum, List) when N > 0 ->
     Microsecond = tc(Fun),
     NewSum = Sum + Microsecond,
     if Max == 0 ->
@@ -83,11 +82,9 @@ loop(Fun, N, I, Max, Min, Sum, List) when N >= I ->
             NewMax = Max,
             NewMin = Min
     end,
-    loop(Fun, N, I + 1, NewMax, NewMin, NewSum, [Microsecond | List]);
-loop({_M, _F, _A}, N, _I, Max, Min, Sum, List) ->
-    Aver = Sum / N,
-    {Greater, Less} = distribution(List, Aver),
-    {Max, Min, Sum, Aver, Greater, Less}.
+    loop(Fun, N - 1, NewMax, NewMin, NewSum, [Microsecond | List]);
+loop(_Fun, _N, Max, Min, Sum, List) ->
+    {Max, Min, Sum, List}.
 
 distribution(List, Aver) ->
     distribution(List, Aver, 0, 0).
@@ -116,7 +113,10 @@ do_ct(Fun, M, F, A, N) ->
 cloop(Fun, N) ->
     CollectorPid = self(),
     ok = loop_spawn(Fun, CollectorPid, N),
-    collector(0, 0, 0, N, 1, []).
+    {Max, Min, Sum, List} = collector(N, 0, 0, 0, []),
+    Aver = Sum / N,
+    {Greater, Less} = distribution(List, Aver),
+    {Max, Min, Sum, Aver, Greater, Less}.
 
 loop_spawn(Fun, CollectorPid, N) when N > 0 ->
     spawn_link(fun() -> worker(Fun, CollectorPid) end),
@@ -124,7 +124,7 @@ loop_spawn(Fun, CollectorPid, N) when N > 0 ->
 loop_spawn(_, _, 0) ->
     ok.
 
-collector(Max, Min, Sum, N, I, List) when N >= I ->
+collector(N, Max, Min, Sum, List) when N > 0 ->
     receive
         {result, Microsecond} ->
             NewSum = Sum + Microsecond,
@@ -140,16 +140,13 @@ collector(Max, Min, Sum, N, I, List) when N >= I ->
                     NewMax = Max,
                     NewMin = Min
             end,
-            collector(NewMax, NewMin, NewSum, N, I + 1, [Microsecond | List])
+            collector(N - 1, NewMax, NewMin, NewSum, [Microsecond | List])
     after 100000 ->
         ok
     end;
-collector(Max, Min, Sum, N, _, List) ->
-    Aver = Sum / N,
-    {Greater, Less} = distribution(List, Aver),
-    {Max, Min, Sum, Aver, Greater, Less}.
+collector(_N, Max, Min, Sum, List) ->
+    {Max, Min, Sum, List}.
 
 worker(Fun, CollectorPid) ->
     Microsecond = tc(Fun),
     CollectorPid ! {result, Microsecond}.
-
